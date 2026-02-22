@@ -84,7 +84,12 @@ func handleTransform(w http.ResponseWriter, r *http.Request) {
 
 	prompt := fmt.Sprintf(`You are an expert SVG animator and designer.
 I will give you an SVG file. I want you to transform it by applying the following action/animation: "%s".
-Return ONLY the raw transformed SVG code. No markdown formatting like \`+"`"+`xml or \`+"`"+`svg. Just the pure raw SVG string starting with <svg> and ending with </svg>. Ensure the animation is done using standard SVG <animate>, <animateTransform>, or CSS embedded inside the SVG. Keep the original viewbox and scaling intact but make it visually execute the requested action.
+
+CRITICAL INSTRUCTIONS:
+1. Return ONLY the raw transformed SVG code. No markdown formatting like \`+"`"+`xml or \`+"`"+`svg.
+2. Ensure the animation is done using standard SVG <animate>, <animateTransform>, or CSS embedded inside the SVG. 
+3. Keep the original viewbox and scaling intact but make it visually execute the requested action.
+4. DO NOT TRUNCATE THE FILE. You must return a fully valid, perfectly closed XML document ending in </svg>. If the input file is too large for you to perfectly reconstruct while animating, you MUST aggressively simplify the paths rather than truncating the output. A malformed XML file is a failure.
 
 Original SVG:
 %s
