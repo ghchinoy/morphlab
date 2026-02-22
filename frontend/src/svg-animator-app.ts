@@ -1,7 +1,7 @@
 import { LitElement, html, css } from 'lit'
 import { customElement, state } from 'lit/decorators.js'
 import './app-bar'
-import './svg-uploader'
+import './multi-source-uploader'
 import './svg-viewer'
 import './history-carousel'
 import { historyService } from './services/history'
@@ -555,9 +555,9 @@ export class SvgAnimatorApp extends LitElement {
         <div class="editor-section">
           <!-- Left Panel: Input -->
           <div class="panel">
-            <div class="panel-header">Source SVG</div>
+            <div class="panel-header">Source Generator</div>
             ${!this.originalSvg 
-              ? html`<svg-uploader @svg-loaded=${this.handleSvgLoaded}></svg-uploader>`
+              ? html`<multi-source-uploader @svg-loaded=${this.handleSvgLoaded}></multi-source-uploader>`
               : html`
                   <svg-viewer .svgContent=${this.originalSvg}></svg-viewer>
                   <button @click=${() => { this.originalSvg = null; this.transformedSvg = null; }} style="margin-top:1rem; padding:0.5rem; background:transparent; border:1px solid #444; color:#aaa; border-radius:6px; cursor:pointer;">
