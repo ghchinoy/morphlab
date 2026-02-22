@@ -16,7 +16,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,26 +24,15 @@ import (
 	"strings"
 )
 
-func callGemini(model, apiKey, prompt string, imageData []byte, mimeType string) (string, error) {
+func callGemini(model, apiKey, prompt string) (string, error) {
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", model, apiKey)
-
-	parts := []map[string]interface{}{
-		{"text": prompt},
-	}
-
-	if len(imageData) > 0 {
-		parts = append(parts, map[string]interface{}{
-			"inline_data": map[string]string{
-				"mime_type": mimeType,
-				"data":      base64.StdEncoding.EncodeToString(imageData),
-			},
-		})
-	}
 
 	payload := map[string]interface{}{
 		"contents": []map[string]interface{}{
 			{
-				"parts": parts,
+				"parts": []map[string]interface{}{
+					{"text": prompt},
+				},
 			},
 		},
 		"generationConfig": map[string]interface{}{

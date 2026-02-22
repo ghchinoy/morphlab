@@ -31,7 +31,6 @@ func init() {
 	rootCmd.AddCommand(analyzeCmd)
 	rootCmd.AddCommand(simplifyCmd)
 	rootCmd.AddCommand(animateCmd)
-	rootCmd.AddCommand(vectorizeCmd)
 }
 
 func analyzeSVG(svgData []byte) {
@@ -91,7 +90,7 @@ var simplifyCmd = &cobra.Command{
 			"Return ONLY the raw transformed SVG code. No markdown formatting like ```xml or ```svg. Just the pure raw SVG string starting with <svg> and ending with </svg>.\n\n" +
 			"Original SVG:\n" + string(svgData)
 
-		runGeminiProcess("simplify", prompt, nil, "")
+		runGeminiProcess("simplify", prompt)
 	},
 }
 
@@ -110,42 +109,11 @@ var animateCmd = &cobra.Command{
 			"Return ONLY the raw transformed SVG code. No markdown formatting like ```xml or ```svg. Just the pure raw SVG string starting with <svg> and ending with </svg>. Ensure the animation is done using standard SVG <animate>, <animateTransform>, or CSS embedded inside the SVG. Keep the original viewbox and scaling intact but make it visually execute the requested action.\n\n" +
 			"Original SVG:\n" + string(svgData)
 
-		runGeminiProcess("animate", prompt, nil, "")
+		runGeminiProcess("animate", prompt)
 	},
 }
 
-var vectorizeCmd = &cobra.Command{
-	Use:   "vectorize [image_file]",
-	Short: "Convert a PNG/JPEG image into a clean SVG using Gemini",
-	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		imagePath := args[0]
-		imageData, err := os.ReadFile(imagePath)
-		if err != nil {
-			log.Fatalf("Error reading image file: %v", err)
-		}
-
-		mimeType := "image/png"
-		lowerPath := strings.ToLower(imagePath)
-		if strings.HasSuffix(lowerPath, ".jpg") || strings.HasSuffix(lowerPath, ".jpeg") {
-			mimeType = "image/jpeg"
-		} else if strings.HasSuffix(lowerPath, ".webp") {
-			mimeType = "image/webp"
-		}
-
-		fmt.Printf("Analyzing %s (%d bytes)...\n", mimeType, len(imageData))
-
-		prompt := "You are an expert vector artist and technical illustrator. Convert the attached image into a crisp, clean, minimalist SVG graphic. " +
-			"Recreate the core subjects of the image using semantic SVG paths, rects, circles, and solid fill colors. " +
-			"Aim for a flat-vector illustration style. Do not use base64 embedded images, only native SVG vectors. " +
-			"Ensure the graphic is production-ready, beautiful, and fully scalable. " +
-			"Output ONLY the raw SVG XML code, starting with <svg> and ending with </svg>, without any markdown formatting or explanations."
-
-		runGeminiProcess("vectorize", prompt, imageData, mimeType)
-	},
-}
-
-func runGeminiProcess(actionName, prompt string, imageData []byte, mimeType string) {
+func runGeminiProcess(actionName, prompt string) {
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
 		log.Fatal("GEMINI_API_KEY not set in .env")
@@ -160,7 +128,7 @@ func runGeminiProcess(actionName, prompt string, imageData []byte, mimeType stri
 	fmt.Printf("Action: %s\n", actionName)
 	fmt.Println("Waiting for response (large files may take several minutes)...")
 
-	resultSVG, err := callGemini(modelName, apiKey, prompt, imageData, mimeType)
+	resultSVG, err := callGemini(modelName, apiKey, prompt)
 	if err != nil {
 		log.Fatalf("Gemini Error: %v", err)
 	}

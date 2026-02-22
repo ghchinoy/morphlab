@@ -1,6 +1,6 @@
 # MorphLab CLI (`morphcli`)
 
-A powerful command-line interface companion to the MorphLab web application. This tool leverages Google's Gemini 3.1 Pro (and 2.5 Flash) models to programmatically analyze, simplify, animate, and vectorize complex scalable vector graphics and raster images.
+A command-line interface companion to the MorphLab web application. This tool leverages Google's Gemini 3.1 Pro (and 2.5 Flash) models to programmatically analyze, simplify, and animate scalable vector graphics.
 
 ## Features & Usage
 
@@ -26,12 +26,6 @@ If an SVG is too complex to animate (e.g., > 15KB), use this command. Gemini 3.1
 Programmatically inject CSS keyframes or SMIL `<animate>` tags directly into an existing SVG via a plain-text prompt.
 ```bash
 ./morphcli animate ../samples/design.svg "make it spin smoothly" -o spinning_design.svg
-```
-
-### 4. Multimodal Vectorization (`vectorize`)
-Pass a raw high-resolution raster image (`.png`, `.jpg`, `.jpeg`, `.webp`) directly to Gemini's vision encoder. The model will analyze the pixels and redraw the core subjects as a flat-vector, production-ready, semantic SVG.
-```bash
-./morphcli vectorize ../samples/wolf.png -o output_wolf.svg
 ```
 
 ## Global Flags

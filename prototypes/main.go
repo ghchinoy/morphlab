@@ -26,7 +26,7 @@ var rootCmd = &cobra.Command{
 	Use:   "morphcli",
 	Short: "MorphLab CLI helper for SVG analysis, generation, and animation",
 	Long: `MorphLab CLI is a prototyping tool to help analyze complex SVGs, 
-simplify them, animate them, or even vectorize raw PNGs directly into SVG format using Gemini models.`,
+simplify them, and animate them using Gemini models.`,
 }
 
 func main() {
