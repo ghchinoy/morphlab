@@ -2,6 +2,8 @@
 
 MorphLab is an advanced AI-powered web dashboard for animating and morphing SVG graphics. Utilizing Google's Gemini models and standard SVG techniques (SMIL `<animate>` tags, CSS keyframes), MorphLab transforms static scalable vector graphics into vibrant, dynamic, production-ready animations based on simple plain-text prompts.
 
+![Image](https://github.com/user-attachments/assets/35a1602d-c389-438a-9784-67ab6ac2113d)
+
 ## Features
 
 - **Generative Loop (History Carousel)**: All generated animations are stored locally in your browser via IndexedDB. Quickly click any previous generation to load its *Result* as your new *Source*, allowing infinite, iterative animation pipelines.
