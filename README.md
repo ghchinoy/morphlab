@@ -16,7 +16,7 @@ MorphLab is an advanced AI-powered web dashboard for animating and morphing SVG 
 
 - **Frontend**: Vite, TypeScript, and Lit WebComponents.
 - **Backend**: A lightweight Go server proxying requests safely to the Gemini API, keeping your API key hidden from the client.
-- **AI Model**: Designed to leverage Google's Gemini models (e.g., `gemini-2.5-flash` or `gemini-3.1-pro-preview`).
+- **AI Model**: Designed to leverage Google's Gemini models (e.g., `gemini-3-flash-preview` or `gemini-3.1-pro-preview`).
 
 ## Setup Instructions
 
@@ -29,7 +29,7 @@ MorphLab is an advanced AI-powered web dashboard for animating and morphing SVG 
 Create a `.env` file at the root of the project with your API key:
 ```env
 GEMINI_API_KEY=your_actual_api_key_here
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.1-pro-preview
 PORT=8080
 ```
 
