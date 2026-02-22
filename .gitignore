@@ -20,6 +20,7 @@ backend/svganimate-server
 backend/morphlab-server
 backend/test_transform
 prototypes/test_transform
+prototypes/morphcli
 prototypes/test_log.txt
 prototypes/*.svg
 
