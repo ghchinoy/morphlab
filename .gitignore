@@ -28,3 +28,6 @@ prototypes/*.svg
 .env
 .env.local
 .env.*.local
+
+*_vectorize.log
+*_simplify.log

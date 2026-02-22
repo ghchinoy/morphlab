@@ -23,7 +23,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var outFile string
+
 func init() {
+	rootCmd.PersistentFlags().StringVarP(&outFile, "output", "o", "transformed_output.svg", "Output file path for the generated SVG")
+
 	rootCmd.AddCommand(analyzeCmd)
 	rootCmd.AddCommand(simplifyCmd)
 	rootCmd.AddCommand(animateCmd)
@@ -161,12 +165,11 @@ func runGeminiProcess(actionName, prompt string, imageData []byte, mimeType stri
 		log.Fatalf("Gemini Error: %v", err)
 	}
 
-	outPath := "transformed_output.svg"
-	err = os.WriteFile(outPath, []byte(resultSVG), 0644)
+	err = os.WriteFile(outFile, []byte(resultSVG), 0644)
 	if err != nil {
 		log.Fatalf("Error saving output: %v", err)
 	}
 
-	fmt.Printf("\n✨ Success! Output saved to %s\n", outPath)
+	fmt.Printf("\n✨ Success! Output saved to %s\n", outFile)
 	analyzeSVG([]byte(resultSVG))
 }
