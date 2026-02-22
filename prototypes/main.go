@@ -30,7 +30,11 @@ simplify them, animate them, or even vectorize raw PNGs directly into SVG format
 }
 
 func main() {
-	_ = godotenv.Load("../.env")
+	// Attempt to load .env from the current directory (project root)
+	// and fallback to the parent directory (if run inside prototypes/)
+	if err := godotenv.Load(".env"); err != nil {
+		_ = godotenv.Load("../.env")
+	}
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)
