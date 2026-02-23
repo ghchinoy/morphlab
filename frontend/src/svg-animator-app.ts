@@ -15,6 +15,7 @@ export class SvgAnimatorApp extends LitElement {
   @state() private isLoading = false
   @state() private error: string | null = null
   @state() private history: HistoryItem[] = []
+  @state() private isComplex: boolean = false
   
   @state() private selectedHistoryItem: HistoryItem | null = null
   
@@ -179,6 +180,17 @@ export class SvgAnimatorApp extends LitElement {
       border-radius: 8px;
       border: 1px solid rgba(255, 82, 82, 0.3);
       text-align: center;
+    }
+
+    .warning-msg {
+      grid-column: 1 / -1;
+      color: #ffb74d;
+      background: rgba(255, 183, 77, 0.1);
+      padding: 1rem;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 183, 77, 0.3);
+      text-align: center;
+      font-size: 0.95rem;
     }
 
     .history-section {
@@ -389,6 +401,9 @@ export class SvgAnimatorApp extends LitElement {
     this.originalSvg = e.detail
     this.transformedSvg = null
     this.error = null
+    
+    // Check if the file is greater than 15 KB (approx 15,000 chars)
+    this.isComplex = this.originalSvg.length > 15000
   }
 
   private handleHistorySelected(e: CustomEvent<HistoryItem>) {
@@ -402,6 +417,7 @@ export class SvgAnimatorApp extends LitElement {
   private loadHistoryAsSource() {
     if (this.selectedHistoryItem) {
       this.originalSvg = this.selectedHistoryItem.resultSvg
+      this.isComplex = this.originalSvg.length > 15000
       this.transformedSvg = null
       this.actionPrompt = this.selectedHistoryItem.action
       this.closeModal()
@@ -551,6 +567,7 @@ export class SvgAnimatorApp extends LitElement {
         </div>
 
         ${this.error ? html`<div class="error-msg">${this.error}</div>` : ''}
+        ${this.isComplex ? html`<div class="warning-msg">⚠️ <strong>Complex Vector Detected:</strong> This file is very large. To avoid hitting animation limits, the AI may take "artistic license" and redraw a simpler version of it.</div>` : ''}
 
         <div class="editor-section">
           <!-- Left Panel: Input -->
