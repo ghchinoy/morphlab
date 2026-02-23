@@ -210,16 +210,16 @@ export class MultiSourceUploader extends LitElement {
     // This reduces the output from ~65KB down to <10KB so Gemini can animate it without token-truncation.
     const tracerOptions = {
       corsenabled: false,
-      ltres: 1,             // Linear error threshold (higher = fewer straight lines, more curves)
-      qtres: 1,             // Quadratic error threshold (higher = fewer curves)
-      pathomit: 32,         // Omit paths smaller than 32 pixels (removes noise)
+      ltres: 5,             // Linear error threshold (higher = fewer straight lines, more curves)
+      qtres: 5,             // Quadratic error threshold (higher = fewer curves)
+      pathomit: 64,         // Omit paths smaller than 64 pixels (severely drops noise/specks)
       colorsampling: 1,     // Sample colors (0 = disabled, 1 = enabled)
-      numberofcolors: 4,    // Extremely limited palette to merge shapes
-      mincolorratio: 0.05,  // Ignore colors that make up less than 5% of the image
+      numberofcolors: 2,    // Extremely limited palette (monochrome/duotone) to force shape merging
+      mincolorratio: 0.1,   // Ignore colors that make up less than 10% of the image
       colorquantcycles: 3,  // Number of color quantization cycles
       scale: 1,             // Output scale
-      simplifytolerance: 0.1, // Simplify paths (higher = fewer points)
-      roundcoords: 1        // Round coordinates to 1 decimal place (massive file size savings)
+      simplifytolerance: 0.5, // Simplify paths (higher = fewer points)
+      roundcoords: 0        // Round coordinates to integers (Maximum file size savings!)
     }
 
     ImageTracer.imageToSVG(url, (svgString: string) => {
