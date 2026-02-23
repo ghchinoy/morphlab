@@ -89,7 +89,7 @@ CRITICAL INSTRUCTIONS:
 1. Return ONLY the raw transformed SVG code. No markdown formatting like \`+"`"+`xml or \`+"`"+`svg.
 2. Ensure the animation is done using standard SVG <animate>, <animateTransform>, or CSS embedded inside the SVG. 
 3. Keep the original viewbox and scaling intact but make it visually execute the requested action.
-4. DO NOT TRUNCATE THE FILE. You must return a fully valid, perfectly closed XML document ending in </svg>. If the input file is too large for you to perfectly reconstruct while animating, you MUST aggressively simplify the paths rather than truncating the output. A malformed XML file is a failure.
+4. MAXIMUM LENGTH: You are constrained by a strict token limit. If the Original SVG is extremely complex or contains dense coordinate paths, DO NOT attempt to reconstruct it verbatim if it will cause you to truncate the file. You MUST aggressively simplify the geometry, merge paths, or lower coordinate precision so that the entire animated file can be written in a single response ending with </svg>. A truncated file is considered a complete failure.
 
 Original SVG:
 %s

@@ -105,8 +105,12 @@ var animateCmd = &cobra.Command{
 		}
 
 		prompt := "You are an expert SVG animator and designer.\n" +
-			"I will give you an SVG file. I want you to transform it by applying the following action/animation: \"" + args[1] + "\".\n" +
-			"Return ONLY the raw transformed SVG code. No markdown formatting like ```xml or ```svg. Just the pure raw SVG string starting with <svg> and ending with </svg>. Ensure the animation is done using standard SVG <animate>, <animateTransform>, or CSS embedded inside the SVG. Keep the original viewbox and scaling intact but make it visually execute the requested action.\n\n" +
+			"I will give you an SVG file. I want you to transform it by applying the following action/animation: \"" + args[1] + "\".\n\n" +
+			"CRITICAL INSTRUCTIONS:\n" +
+			"1. Return ONLY the raw transformed SVG code. No markdown formatting like ```xml or ```svg.\n" +
+			"2. Ensure the animation is done using standard SVG <animate>, <animateTransform>, or CSS embedded inside the SVG.\n" +
+			"3. Keep the original viewbox and scaling intact but make it visually execute the requested action.\n" +
+			"4. MAXIMUM LENGTH: You are constrained by a strict token limit. If the Original SVG is extremely complex or contains dense coordinate paths, DO NOT attempt to reconstruct it verbatim if it will cause you to truncate the file. You MUST aggressively simplify the geometry, merge paths, or lower coordinate precision so that the entire animated file can be written in a single response ending with </svg>. A truncated file is considered a complete failure.\n\n" +
 			"Original SVG:\n" + string(svgData)
 
 		runGeminiProcess("animate", prompt)
