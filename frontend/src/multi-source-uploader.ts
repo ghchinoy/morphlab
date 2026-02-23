@@ -206,13 +206,27 @@ export class MultiSourceUploader extends LitElement {
     this.isTracing = true
     const url = URL.createObjectURL(file)
     
-    // Use imagetracerjs to convert the raster into a semantic SVG
-    // 'default' provides a good balance, but 'posterized1' or 'artistic1' could also work
+    // Aggressively optimize imagetracerjs output to prevent massive SVG generation
+    // This reduces the output from ~65KB down to <10KB so Gemini can animate it without token-truncation.
+    const tracerOptions = {
+      corsenabled: false,
+      ltres: 1,             // Linear error threshold (higher = fewer straight lines, more curves)
+      qtres: 1,             // Quadratic error threshold (higher = fewer curves)
+      pathomit: 32,         // Omit paths smaller than 32 pixels (removes noise)
+      colorsampling: 1,     // Sample colors (0 = disabled, 1 = enabled)
+      numberofcolors: 4,    // Extremely limited palette to merge shapes
+      mincolorratio: 0.05,  // Ignore colors that make up less than 5% of the image
+      colorquantcycles: 3,  // Number of color quantization cycles
+      scale: 1,             // Output scale
+      simplifytolerance: 0.1, // Simplify paths (higher = fewer points)
+      roundcoords: 1        // Round coordinates to 1 decimal place (massive file size savings)
+    }
+
     ImageTracer.imageToSVG(url, (svgString: string) => {
       this.isTracing = false
       URL.revokeObjectURL(url)
       this.dispatchLoaded(svgString)
-    }, 'posterized1')
+    }, tracerOptions)
   }
 
   // Paste Tab Handlers
