@@ -14,39 +14,39 @@
  * limitations under the License.
  */
 
-import { get, update, del } from 'idb-keyval'
+import { get, update, del } from 'idb-keyval';
 
 export interface HistoryItem {
-  id: string
-  originalSvg: string
-  action: string
-  resultSvg: string
-  timestamp: number
+  id: string;
+  originalSvg: string;
+  action: string;
+  resultSvg: string;
+  timestamp: number;
 }
 
-const HISTORY_KEY = 'morphlab_history'
+const HISTORY_KEY = 'morphlab_history';
 
 export const historyService = {
   async getHistory(): Promise<HistoryItem[]> {
-    const history = await get<HistoryItem[]>(HISTORY_KEY)
-    return history || []
+    const history = await get<HistoryItem[]>(HISTORY_KEY);
+    return history || [];
   },
 
   async addHistoryItem(item: HistoryItem): Promise<void> {
     await update(HISTORY_KEY, (val) => {
-      const history = (val as HistoryItem[]) || []
-      return [item, ...history] // prepend newest
-    })
+      const history = (val as HistoryItem[]) || [];
+      return [item, ...history]; // prepend newest
+    });
   },
 
   async deleteHistoryItem(id: string): Promise<void> {
     await update(HISTORY_KEY, (val) => {
-      const history = (val as HistoryItem[]) || []
-      return history.filter((item: HistoryItem) => item.id !== id)
-    })
+      const history = (val as HistoryItem[]) || [];
+      return history.filter((item: HistoryItem) => item.id !== id);
+    });
   },
 
   async clearHistory(): Promise<void> {
-    await del(HISTORY_KEY)
-  }
-}
+    await del(HISTORY_KEY);
+  },
+};

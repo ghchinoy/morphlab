@@ -16,6 +16,7 @@ frontend/dist-ssr/
 frontend/*.local
 
 # Go workspace
+backend/svganimate
 backend/svganimate-server
 backend/morphlab-server
 backend/test_transform
@@ -28,6 +29,10 @@ prototypes/*.svg
 .env
 .env.local
 .env.*.local
+!.env.example
+
+# Agent / Tooling local directories
+.serena/
 
 *_vectorize.log
 *_simplify.log

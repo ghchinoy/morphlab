@@ -15,77 +15,75 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"io"
-	"log"
-	"net/http"
+	"context"
+	"errors"
+	"os"
 	"strings"
+	"time"
+
+	"google.golang.org/genai"
 )
 
-func callGemini(model, apiKey, prompt string) (string, error) {
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", model, apiKey)
+const (
+	defaultModelName  = "gemini-4-argon"
+	generationTimeout = 3 * time.Minute
+)
 
-	payload := map[string]interface{}{
-		"contents": []map[string]interface{}{
-			{
-				"parts": []map[string]interface{}{
-					{"text": prompt},
-				},
-			},
-		},
-		"generationConfig": map[string]interface{}{
-			"temperature": 0.2,
-		},
+func resolveModelName() string {
+	if envModel := strings.TrimSpace(os.Getenv("GEMINI_MODEL")); envModel != "" {
+		return envModel
+	}
+	return defaultModelName
+}
+
+func newGenAIClient(ctx context.Context) (*genai.Client, error) {
+	apiKey := strings.TrimSpace(os.Getenv("GEMINI_API_KEY"))
+	if apiKey != "" {
+		return genai.NewClient(ctx, &genai.ClientConfig{
+			APIKey:  apiKey,
+			Backend: genai.BackendGeminiAPI,
+		})
 	}
 
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return "", err
-	}
-
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer func() {
-		if closeErr := res.Body.Close(); closeErr != nil {
-			log.Printf("Error closing response body: %v", closeErr)
+	project := strings.TrimSpace(os.Getenv("GOOGLE_CLOUD_PROJECT"))
+	if project != "" {
+		location := strings.TrimSpace(os.Getenv("GOOGLE_CLOUD_LOCATION"))
+		if location == "" {
+			location = "global"
 		}
-	}()
-
-	respBody, _ := io.ReadAll(res.Body)
-
-	if res.StatusCode != 200 {
-		return "", fmt.Errorf("API Error: %s", string(respBody))
+		return genai.NewClient(ctx, &genai.ClientConfig{
+			Project:  project,
+			Location: location,
+			Backend:  genai.BackendVertexAI,
+		})
 	}
 
-	var geminiResp struct {
-		Candidates []struct {
-			Content struct {
-				Parts []struct {
-					Text string `json:"text"`
-				} `json:"parts"`
-			} `json:"content"`
-		} `json:"candidates"`
-	}
+	return nil, errors.New("neither GEMINI_API_KEY nor GOOGLE_CLOUD_PROJECT is configured in environment or .env")
+}
 
-	if err := json.Unmarshal(respBody, &geminiResp); err != nil {
+func callGemini(model, prompt string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), generationTimeout)
+	defer cancel()
+
+	client, err := newGenAIClient(ctx)
+	if err != nil {
 		return "", err
 	}
 
-	if len(geminiResp.Candidates) > 0 && len(geminiResp.Candidates[0].Content.Parts) > 0 {
-		return cleanSVGOutput(geminiResp.Candidates[0].Content.Parts[0].Text), nil
+	temp := float32(0.2)
+	resp, err := client.Models.GenerateContent(ctx, model, genai.Text(prompt), &genai.GenerateContentConfig{
+		Temperature: &temp,
+	})
+	if err != nil {
+		return "", err
 	}
 
-	return "", fmt.Errorf("empty response from Gemini")
+	text := strings.TrimSpace(resp.Text())
+	if text == "" {
+		return "", errors.New("empty response from Gemini")
+	}
+
+	return cleanSVGOutput(text), nil
 }
 
 func cleanSVGOutput(raw string) string {
@@ -94,5 +92,12 @@ func cleanSVGOutput(raw string) string {
 	result = strings.TrimPrefix(result, "```svg")
 	result = strings.TrimPrefix(result, "```")
 	result = strings.TrimSuffix(strings.TrimSpace(result), "```")
-	return strings.TrimSpace(result)
+	result = strings.TrimSpace(result)
+
+	startIdx := strings.Index(strings.ToLower(result), "<svg")
+	endIdx := strings.LastIndex(strings.ToLower(result), "</svg>")
+	if startIdx != -1 && endIdx != -1 && endIdx > startIdx {
+		return strings.TrimSpace(result[startIdx : endIdx+len("</svg>")])
+	}
+	return result
 }

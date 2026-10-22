@@ -25,6 +25,17 @@ import (
 
 var outFile string
 
+// SVGStats holds complexity metrics for an SVG document.
+type SVGStats struct {
+	SizeBytes int
+	Paths     int
+	Polygons  int
+	Rects     int
+	Circles   int
+	Groups    int
+	IsComplex bool
+}
+
 func init() {
 	rootCmd.PersistentFlags().StringVarP(&outFile, "output", "o", "transformed_output.svg", "Output file path for the generated SVG")
 
@@ -33,22 +44,31 @@ func init() {
 	rootCmd.AddCommand(animateCmd)
 }
 
-func analyzeSVG(svgData []byte) {
+func computeSVGStats(svgData []byte) SVGStats {
 	str := string(svgData)
 	size := len(svgData)
-	paths := strings.Count(str, "<path")
-	polygons := strings.Count(str, "<polygon")
-	rects := strings.Count(str, "<rect")
-	circles := strings.Count(str, "<circle")
-	groups := strings.Count(str, "<g")
+	return SVGStats{
+		SizeBytes: size,
+		Paths:     strings.Count(str, "<path"),
+		Polygons:  strings.Count(str, "<polygon"),
+		Rects:     strings.Count(str, "<rect"),
+		Circles:   strings.Count(str, "<circle"),
+		Groups:    strings.Count(str, "<g"),
+		IsComplex: size > 15000,
+	}
+}
+
+func analyzeSVG(svgData []byte) {
+	stats := computeSVGStats(svgData)
 
 	fmt.Println("========================================")
 	fmt.Println("📊 SVG COMPLEXITY ANALYSIS")
 	fmt.Println("========================================")
-	fmt.Printf("File Size : %.2f KB\n", float64(size)/1024.0)
-	fmt.Printf("Elements  : %d paths, %d polygons, %d rects, %d circles, %d groups\n", paths, polygons, rects, circles, groups)
+	fmt.Printf("File Size : %.2f KB\n", float64(stats.SizeBytes)/1024.0)
+	fmt.Printf("Elements  : %d paths, %d polygons, %d rects, %d circles, %d groups\n",
+		stats.Paths, stats.Polygons, stats.Rects, stats.Circles, stats.Groups)
 
-	if size > 15000 {
+	if stats.IsComplex {
 		fmt.Println("⚠️ WARNING: This SVG is highly complex (> 15 KB).")
 		fmt.Println("   AI models stream output token-by-token. Reconstructing this")
 		fmt.Println("   is highly prone to timeouts or hitting maximum token limits.")
@@ -109,7 +129,7 @@ var animateCmd = &cobra.Command{
 			"CRITICAL INSTRUCTIONS:\n" +
 			"1. Return ONLY the raw transformed SVG code. No markdown formatting like ```xml or ```svg.\n" +
 			"2. Ensure the animation is done using standard SVG <animate>, <animateTransform>, or CSS embedded inside the SVG.\n" +
-			"3. Keep the original viewbox and scaling intact but make it visually execute the requested action.\n" +
+			"3. Keep the original viewBox and scaling intact but make it visually execute the requested action.\n" +
 			"4. MAXIMUM LENGTH: You are constrained by a strict token limit. If the Original SVG is extremely complex or contains dense coordinate paths, DO NOT attempt to reconstruct it verbatim if it will cause you to truncate the file. You MUST aggressively simplify the geometry, merge paths, or lower coordinate precision so that the entire animated file can be written in a single response ending with </svg>. A truncated file is considered a complete failure.\n\n" +
 			"Original SVG:\n" + string(svgData)
 
@@ -118,21 +138,13 @@ var animateCmd = &cobra.Command{
 }
 
 func runGeminiProcess(actionName, prompt string) {
-	apiKey := os.Getenv("GEMINI_API_KEY")
-	if apiKey == "" {
-		log.Fatal("GEMINI_API_KEY not set in .env")
-	}
-
-	modelName := os.Getenv("GEMINI_MODEL")
-	if modelName == "" {
-		modelName = "gemini-3.1-pro-preview"
-	}
+	modelName := resolveModelName()
 
 	fmt.Printf("Invoking Gemini model: %s\n", modelName)
 	fmt.Printf("Action: %s\n", actionName)
 	fmt.Println("Waiting for response (large files may take several minutes)...")
 
-	resultSVG, err := callGemini(modelName, apiKey, prompt)
+	resultSVG, err := callGemini(modelName, prompt)
 	if err != nil {
 		log.Fatalf("Gemini Error: %v", err)
 	}

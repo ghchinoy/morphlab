@@ -1,12 +1,29 @@
-import { LitElement, html, css } from 'lit'
-import { customElement, state } from 'lit/decorators.js'
-import ImageTracer from 'imagetracerjs'
+/**
+ * Copyright 2026 Google LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import { LitElement, html, css } from 'lit';
+import { customElement, state } from 'lit/decorators.js';
+import ImageTracer from 'imagetracerjs';
+import type { ImageTracerOptions } from 'imagetracerjs';
 
 @customElement('multi-source-uploader')
 export class MultiSourceUploader extends LitElement {
-  @state() private activeTab: 'svg' | 'png' | 'paste' = 'svg'
-  @state() private rawPasteText: string = ''
-  @state() private isTracing: boolean = false
+  @state() private activeTab: 'svg' | 'png' | 'paste' = 'svg';
+  @state() private rawPasteText = '';
+  @state() private isTracing = false;
 
   static styles = css`
     :host {
@@ -34,6 +51,7 @@ export class MultiSourceUploader extends LitElement {
       cursor: pointer;
       position: relative;
       transition: color 0.2s;
+      font-family: inherit;
     }
 
     .tab:hover {
@@ -74,7 +92,6 @@ export class MultiSourceUploader extends LitElement {
       min-height: 200px;
     }
 
-    /* Common Dropzone Styles */
     .dropzone {
       border: 2px dashed rgba(255, 255, 255, 0.2);
       border-radius: 12px;
@@ -90,7 +107,8 @@ export class MultiSourceUploader extends LitElement {
       gap: 1rem;
     }
 
-    .dropzone:hover, .dropzone.dragover {
+    .dropzone:hover,
+    .dropzone.dragover {
       border-color: #1f68f9;
       background: rgba(31, 104, 249, 0.05);
       color: #fff;
@@ -102,11 +120,10 @@ export class MultiSourceUploader extends LitElement {
       fill: currentColor;
     }
 
-    input[type="file"] {
+    input[type='file'] {
       display: none;
     }
 
-    /* Paste Area */
     textarea {
       width: 100%;
       height: 200px;
@@ -143,168 +160,238 @@ export class MultiSourceUploader extends LitElement {
     .btn-apply:hover {
       background: #3b7cf9;
     }
-    
+
     .tracing-overlay {
       color: #1f68f9;
       font-weight: bold;
       animation: pulse 1.5s infinite;
     }
-    
-    @keyframes pulse {
-      0% { opacity: 0.5; }
-      50% { opacity: 1; }
-      100% { opacity: 0.5; }
-    }
-  `
 
-  // SVG Tab Handlers
+    @keyframes pulse {
+      0% {
+        opacity: 0.5;
+      }
+      50% {
+        opacity: 1;
+      }
+      100% {
+        opacity: 0.5;
+      }
+    }
+  `;
+
   private handleSvgDrop(e: DragEvent) {
-    this.prevent(e)
+    this.prevent(e);
     if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
-      this.readSvgFile(e.dataTransfer.files[0])
+      this.readSvgFile(e.dataTransfer.files[0]);
     }
   }
 
   private handleSvgSelect(e: Event) {
-    const input = e.target as HTMLInputElement
+    const input = e.target as HTMLInputElement;
     if (input.files && input.files.length > 0) {
-      this.readSvgFile(input.files[0])
+      this.readSvgFile(input.files[0]);
     }
   }
 
   private readSvgFile(file: File) {
-    if (file.type !== 'image/svg+xml') {
-      alert('Please upload an SVG file.')
-      return
+    if (file.type !== 'image/svg+xml' && !file.name.toLowerCase().endsWith('.svg')) {
+      this.dispatchError('Please upload a valid .svg file.');
+      return;
     }
-    const reader = new FileReader()
-    reader.onload = (e) => this.dispatchLoaded(e.target?.result as string)
-    reader.readAsText(file)
+    const reader = new FileReader();
+    reader.onload = (e) => this.dispatchLoaded(e.target?.result as string);
+    reader.readAsText(file);
   }
 
-  // PNG Tab Handlers
   private handlePngDrop(e: DragEvent) {
-    this.prevent(e)
+    this.prevent(e);
     if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
-      this.tracePngFile(e.dataTransfer.files[0])
+      this.tracePngFile(e.dataTransfer.files[0]);
     }
   }
 
   private handlePngSelect(e: Event) {
-    const input = e.target as HTMLInputElement
+    const input = e.target as HTMLInputElement;
     if (input.files && input.files.length > 0) {
-      this.tracePngFile(input.files[0])
+      this.tracePngFile(input.files[0]);
     }
   }
 
   private tracePngFile(file: File) {
     if (!file.type.startsWith('image/')) {
-      alert('Please upload an image file (PNG/JPG).')
-      return
+      this.dispatchError('Please upload an image file (PNG/JPG/WebP).');
+      return;
     }
 
-    this.isTracing = true
-    const url = URL.createObjectURL(file)
-    
-    // Aggressively optimize imagetracerjs output to prevent massive SVG generation
-    // This reduces the output from ~65KB down to <10KB so Gemini can animate it without token-truncation.
-    const tracerOptions = {
+    this.isTracing = true;
+    const url = URL.createObjectURL(file);
+
+    // Aggressively optimize imagetracerjs output to prevent massive SVG generation.
+    // This reduces output from ~65KB down to <10KB so Gemini can animate it without token truncation.
+    const tracerOptions: ImageTracerOptions = {
       corsenabled: false,
-      ltres: 5,             // Linear error threshold (higher = fewer straight lines, more curves)
-      qtres: 5,             // Quadratic error threshold (higher = fewer curves)
-      pathomit: 64,         // Omit paths smaller than 64 pixels (severely drops noise/specks)
-      colorsampling: 1,     // Sample colors (0 = disabled, 1 = enabled)
-      numberofcolors: 2,    // Extremely limited palette (monochrome/duotone) to force shape merging
-      mincolorratio: 0.1,   // Ignore colors that make up less than 10% of the image
-      colorquantcycles: 3,  // Number of color quantization cycles
-      scale: 1,             // Output scale
-      simplifytolerance: 0.5, // Simplify paths (higher = fewer points)
-      roundcoords: 0        // Round coordinates to integers (Maximum file size savings!)
-    }
+      ltres: 5,
+      qtres: 5,
+      pathomit: 64,
+      colorsampling: 1,
+      numberofcolors: 2,
+      mincolorratio: 0.1,
+      colorquantcycles: 3,
+      scale: 1,
+      simplifytolerance: 0.5,
+      roundcoords: 0,
+    };
 
-    ImageTracer.imageToSVG(url, (svgString: string) => {
-      this.isTracing = false
-      URL.revokeObjectURL(url)
-      this.dispatchLoaded(svgString)
-    }, tracerOptions)
+    ImageTracer.imageToSVG(
+      url,
+      (svgString: string) => {
+        this.isTracing = false;
+        URL.revokeObjectURL(url);
+        this.dispatchLoaded(svgString);
+      },
+      tracerOptions,
+    );
   }
 
-  // Paste Tab Handlers
   private handlePasteApply() {
-    if (this.rawPasteText.trim().startsWith('<svg')) {
-      this.dispatchLoaded(this.rawPasteText.trim())
+    const trimmed = this.rawPasteText.trim();
+    if (trimmed.toLowerCase().includes('<svg') && trimmed.toLowerCase().includes('</svg>')) {
+      this.dispatchLoaded(trimmed);
     } else {
-      alert('Please paste valid SVG markup starting with <svg>')
+      this.dispatchError('Please paste valid SVG markup containing <svg>...</svg>.');
     }
   }
 
-  // Utilities
   private prevent(e: Event) {
-    e.preventDefault()
-    e.stopPropagation()
+    e.preventDefault();
+    e.stopPropagation();
   }
 
   private dispatchLoaded(svgData: string) {
-    this.dispatchEvent(new CustomEvent('svg-loaded', {
-      detail: svgData,
-      bubbles: true,
-      composed: true
-    }))
+    this.dispatchEvent(
+      new CustomEvent('svg-loaded', {
+        detail: svgData,
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  private dispatchError(message: string) {
+    this.dispatchEvent(
+      new CustomEvent('upload-error', {
+        detail: message,
+        bubbles: true,
+        composed: true,
+      }),
+    );
   }
 
   render() {
     return html`
       <div class="tabs">
-        <button class="tab ${this.activeTab === 'svg' ? 'active' : ''}" @click=${() => this.activeTab = 'svg'}>Upload SVG</button>
-        <button class="tab ${this.activeTab === 'png' ? 'active' : ''}" @click=${() => this.activeTab = 'png'}>
+        <button
+          class="tab ${this.activeTab === 'svg' ? 'active' : ''}"
+          @click=${() => (this.activeTab = 'svg')}
+        >
+          Upload SVG
+        </button>
+        <button
+          class="tab ${this.activeTab === 'png' ? 'active' : ''}"
+          @click=${() => (this.activeTab = 'png')}
+        >
           Upload Image <span class="badge">Trace</span>
         </button>
-        <button class="tab ${this.activeTab === 'paste' ? 'active' : ''}" @click=${() => this.activeTab = 'paste'}>Paste XML</button>
+        <button
+          class="tab ${this.activeTab === 'paste' ? 'active' : ''}"
+          @click=${() => (this.activeTab = 'paste')}
+        >
+          Paste XML
+        </button>
       </div>
 
       <div class="tab-content">
-        ${this.activeTab === 'svg' ? html`
-          <div class="dropzone" @dragover=${this.prevent} @drop=${this.handleSvgDrop} @click=${() => (this.shadowRoot?.querySelector('#svg-input') as HTMLInputElement)?.click()}>
-            <svg viewBox="0 0 24 24"><path d="M19 13v6a2 2 0 01-2 2H7a2 2 0 01-2-2v-6m4-4l3-3m0 0l3 3m-3-3v12"/></svg>
-            <div>Drop a native .svg file here</div>
-            <input id="svg-input" type="file" accept=".svg" @change=${this.handleSvgSelect} />
-          </div>
-        ` : ''}
-
-        ${this.activeTab === 'png' ? html`
-          <div class="dropzone" @dragover=${this.prevent} @drop=${this.handlePngDrop} @click=${() => !this.isTracing && (this.shadowRoot?.querySelector('#png-input') as HTMLInputElement)?.click()}>
-            ${this.isTracing 
-              ? html`<div class="tracing-overlay">Tracing Pixels to Vectors...</div>`
-              : html`
-                  <svg viewBox="0 0 24 24"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" stroke="currentColor" stroke-width="2" fill="none"/></svg>
-                  <div>Drop a PNG/JPG. We will auto-trace it into vectors!</div>
-                `
-            }
-            <input id="png-input" type="file" accept="image/png, image/jpeg, image/webp" @change=${this.handlePngSelect} ?disabled=${this.isTracing} />
-          </div>
-        ` : ''}
-
-        ${this.activeTab === 'paste' ? html`
-          <div>
-            <textarea 
-              placeholder="<svg viewBox='0 0 100 100'>
+        ${this.activeTab === 'svg'
+          ? html`
+              <div
+                class="dropzone"
+                @dragover=${this.prevent}
+                @drop=${this.handleSvgDrop}
+                @click=${() =>
+                  (this.shadowRoot?.querySelector('#svg-input') as HTMLInputElement)?.click()}
+              >
+                <svg viewBox="0 0 24 24">
+                  <path d="M19 13v6a2 2 0 01-2 2H7a2 2 0 01-2-2v-6m4-4l3-3m0 0l3 3m-3-3v12" />
+                </svg>
+                <div>Drop a native .svg file here</div>
+                <input id="svg-input" type="file" accept=".svg" @change=${this.handleSvgSelect} />
+              </div>
+            `
+          : ''}
+        ${this.activeTab === 'png'
+          ? html`
+              <div
+                class="dropzone"
+                @dragover=${this.prevent}
+                @drop=${this.handlePngDrop}
+                @click=${() =>
+                  !this.isTracing &&
+                  (this.shadowRoot?.querySelector('#png-input') as HTMLInputElement)?.click()}
+              >
+                ${this.isTracing
+                  ? html`<div class="tracing-overlay">Tracing Pixels to Vectors...</div>`
+                  : html`
+                      <svg viewBox="0 0 24 24">
+                        <path
+                          d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          fill="none"
+                        />
+                      </svg>
+                      <div>Drop a PNG/JPG. We will auto-trace it into vectors!</div>
+                    `}
+                <input
+                  id="png-input"
+                  type="file"
+                  accept="image/png, image/jpeg, image/webp"
+                  @change=${this.handlePngSelect}
+                  ?disabled=${this.isTracing}
+                />
+              </div>
+            `
+          : ''}
+        ${this.activeTab === 'paste'
+          ? html`
+              <div>
+                <textarea
+                  placeholder="<svg viewBox='0 0 100 100'>
   <circle cx='50' cy='50' r='40' />
 </svg>"
-              .value=${this.rawPasteText}
-              @input=${(e: Event) => this.rawPasteText = (e.target as HTMLTextAreaElement).value}
-            ></textarea>
-            <div class="action-row">
-              <button class="btn-apply" @click=${this.handlePasteApply} ?disabled=${!this.rawPasteText}>Load XML</button>
-            </div>
-          </div>
-        ` : ''}
+                  .value=${this.rawPasteText}
+                  @input=${(e: Event) =>
+                    (this.rawPasteText = (e.target as HTMLTextAreaElement).value)}
+                ></textarea>
+                <div class="action-row">
+                  <button
+                    class="btn-apply"
+                    @click=${this.handlePasteApply}
+                    ?disabled=${!this.rawPasteText}
+                  >
+                    Load XML
+                  </button>
+                </div>
+              </div>
+            `
+          : ''}
       </div>
-    `
+    `;
   }
 }
 
 declare global {
   interface HTMLElementTagNameMap {
-    'multi-source-uploader': MultiSourceUploader
+    'multi-source-uploader': MultiSourceUploader;
   }
 }

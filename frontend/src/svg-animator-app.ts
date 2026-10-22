@@ -1,42 +1,76 @@
-import { LitElement, html, css } from 'lit'
-import { customElement, state } from 'lit/decorators.js'
-import './app-bar'
-import './multi-source-uploader'
-import './svg-viewer'
-import './history-carousel'
-import { historyService } from './services/history'
-import type { HistoryItem } from './services/history'
+/**
+ * Copyright 2026 Google LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import { LitElement, html, css } from 'lit';
+import { customElement, state } from 'lit/decorators.js';
+import './app-bar';
+import './about-dialog';
+import './error-toast';
+import './multi-source-uploader';
+import './svg-viewer';
+import './history-carousel';
+import { historyService } from './services/history';
+import type { HistoryItem } from './services/history';
+import { downloadSvgFile, isComplexSvg, parseSvgToDataUrl } from './utils/svg';
+
+interface TransformApiResponse {
+  result?: string;
+  model?: string;
+  error?: string;
+}
+
+interface HealthApiResponse {
+  status: string;
+  model: string;
+  backend: string;
+}
 
 @customElement('svg-animator-app')
 export class SvgAnimatorApp extends LitElement {
-  @state() private originalSvg: string | null = null
-  @state() private transformedSvg: string | null = null
-  @state() private actionPrompt: string = ''
-  @state() private isLoading = false
-  @state() private error: string | null = null
-  @state() private history: HistoryItem[] = []
-  @state() private isComplex: boolean = false
-  
-  @state() private selectedHistoryItem: HistoryItem | null = null
-  
-  @state() private loadingPhraseIndex = 0
+  @state() private originalSvg: string | null = null;
+  @state() private transformedSvg: string | null = null;
+  @state() private actionPrompt = '';
+  @state() private isLoading = false;
+  @state() private error: string | null = null;
+  @state() private history: HistoryItem[] = [];
+  @state() private isComplex = false;
+  @state() private activeModel = 'gemini-4-argon';
+  @state() private showAbout = false;
+
+  @state() private selectedHistoryItem: HistoryItem | null = null;
+
+  @state() private loadingPhraseIndex = 0;
   private loadingPhrases = [
-    "Analyzing SVG topology...",
-    "Injecting SMIL animations...",
-    "Applying CSS keyframes...",
-    "Rebuilding path data...",
-    "Almost there..."
-  ]
-  private loadingTimer: number | null = null
+    'Analyzing SVG topology...',
+    'Injecting SMIL animations...',
+    'Applying CSS keyframes...',
+    'Rebuilding path data...',
+    'Almost there...',
+  ];
+  private loadingTimer: number | null = null;
+  private errorDismissTimer: number | null = null;
 
   private presets = [
-    "Draw path outline organically",
-    "Neon cyberpunk glitch",
-    "Breathe and float gently",
-    "Spin with 3D perspective",
-    "Pulse with vivid sunset colors",
-    "Liquid morphing bubble effect"
-  ]
+    'Draw path outline organically',
+    'Neon cyberpunk glitch',
+    'Breathe and float gently',
+    'Spin with 3D perspective',
+    'Pulse with vivid sunset colors',
+    'Liquid morphing bubble effect',
+  ];
 
   static styles = css`
     :host {
@@ -172,16 +206,6 @@ export class SvgAnimatorApp extends LitElement {
       box-shadow: none;
     }
 
-    .error-msg {
-      grid-column: 1 / -1;
-      color: #ff5252;
-      background: rgba(255, 82, 82, 0.1);
-      padding: 1rem;
-      border-radius: 8px;
-      border: 1px solid rgba(255, 82, 82, 0.3);
-      text-align: center;
-    }
-
     .warning-msg {
       grid-column: 1 / -1;
       color: #ffb74d;
@@ -195,7 +219,7 @@ export class SvgAnimatorApp extends LitElement {
 
     .history-section {
       margin-top: auto;
-      border-top: 1px solid rgba(255,255,255,0.05);
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
       padding-top: 2rem;
     }
 
@@ -231,10 +255,11 @@ export class SvgAnimatorApp extends LitElement {
     }
 
     @keyframes spin {
-      to { transform: rotate(360deg); }
+      to {
+        transform: rotate(360deg);
+      }
     }
 
-    /* Modal Overlay Styles */
     .modal-overlay {
       position: fixed;
       inset: 0;
@@ -308,7 +333,9 @@ export class SvgAnimatorApp extends LitElement {
       padding: 0.5rem;
       border-radius: 50%;
       line-height: 1;
-      transition: color 0.2s, background 0.2s;
+      transition:
+        color 0.2s,
+        background 0.2s;
     }
 
     .close-btn:hover {
@@ -328,9 +355,17 @@ export class SvgAnimatorApp extends LitElement {
       width: 100%;
       max-height: 500px;
       background: #f0f0f0;
-      background-image: linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%);
+      background-image:
+        linear-gradient(45deg, #ccc 25%, transparent 25%),
+        linear-gradient(-45deg, #ccc 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #ccc 75%),
+        linear-gradient(-45deg, transparent 75%, #ccc 75%);
       background-size: 20px 20px;
-      background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+      background-position:
+        0 0,
+        0 10px,
+        10px -10px,
+        -10px 0px;
       border-radius: 12px;
       padding: 1rem;
       display: flex;
@@ -386,111 +421,117 @@ export class SvgAnimatorApp extends LitElement {
       background: rgba(255, 82, 82, 0.2);
       border-color: #ff5252;
     }
-  `
+  `;
 
   async connectedCallback() {
-    super.connectedCallback()
-    await this.loadHistory()
+    super.connectedCallback();
+    await Promise.all([this.loadHistory(), this.fetchServerHealth()]);
   }
 
   private async loadHistory() {
-    this.history = await historyService.getHistory()
+    this.history = await historyService.getHistory();
+  }
+
+  private async fetchServerHealth() {
+    try {
+      const res = await fetch('/api/health');
+      if (res.ok) {
+        const data = (await res.json()) as HealthApiResponse;
+        if (data.model) {
+          this.activeModel = data.model;
+        }
+      }
+    } catch {
+      // Fallback to default model badge if running frontend standalone
+    }
+  }
+
+  private showErrorToast(message: string) {
+    this.error = message;
+    if (this.errorDismissTimer) {
+      window.clearTimeout(this.errorDismissTimer);
+    }
+    this.errorDismissTimer = window.setTimeout(() => {
+      this.error = null;
+      this.errorDismissTimer = null;
+    }, 6000);
   }
 
   private handleSvgLoaded(e: CustomEvent<string>) {
-    this.originalSvg = e.detail
-    this.transformedSvg = null
-    this.error = null
-    
-    // Check if the file is greater than 15 KB (approx 15,000 chars)
-    this.isComplex = this.originalSvg.length > 15000
+    this.originalSvg = e.detail;
+    this.transformedSvg = null;
+    this.error = null;
+    this.isComplex = isComplexSvg(this.originalSvg);
+  }
+
+  private handleUploadError(e: CustomEvent<string>) {
+    this.showErrorToast(e.detail);
   }
 
   private handleHistorySelected(e: CustomEvent<HistoryItem>) {
-    this.selectedHistoryItem = e.detail
+    this.selectedHistoryItem = e.detail;
   }
 
   private closeModal() {
-    this.selectedHistoryItem = null
+    this.selectedHistoryItem = null;
   }
 
   private loadHistoryAsSource() {
     if (this.selectedHistoryItem) {
-      this.originalSvg = this.selectedHistoryItem.resultSvg
-      this.isComplex = this.originalSvg.length > 15000
-      this.transformedSvg = null
-      this.actionPrompt = this.selectedHistoryItem.action
-      this.closeModal()
-      
-      // Optional: scroll back to top smoothly so they can generate
-      window.scrollTo({ top: 0, behavior: 'smooth' })
+      this.originalSvg = this.selectedHistoryItem.resultSvg;
+      this.isComplex = isComplexSvg(this.originalSvg);
+      this.transformedSvg = null;
+      this.actionPrompt = this.selectedHistoryItem.action;
+      this.closeModal();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }
 
   private async deleteHistoryItem() {
     if (this.selectedHistoryItem) {
-      if (confirm('Are you sure you want to delete this animation from your history?')) {
-        await historyService.deleteHistoryItem(this.selectedHistoryItem.id)
-        await this.loadHistory()
-        this.closeModal()
-      }
+      await historyService.deleteHistoryItem(this.selectedHistoryItem.id);
+      await this.loadHistory();
+      this.closeModal();
     }
   }
 
   private downloadModalSvg() {
-    if (!this.selectedHistoryItem) return
-    const blob = new Blob([this.selectedHistoryItem.resultSvg], { type: 'image/svg+xml' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `morphlab-${this.selectedHistoryItem.timestamp}.svg`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    if (!this.selectedHistoryItem) return;
+    downloadSvgFile(
+      this.selectedHistoryItem.resultSvg,
+      `morphlab-${this.selectedHistoryItem.timestamp}.svg`,
+    );
   }
 
   private renderSvg(rawSvg: string) {
-    if (!rawSvg) return html``
-    const parser = new DOMParser()
-    const doc = parser.parseFromString(rawSvg, 'image/svg+xml')
-    const errorNode = doc.querySelector('parsererror')
-    if (errorNode) {
-      return html`<div style="color: #ff5252; padding: 2rem; text-align: center;">Malformed SVG Output</div>`
+    if (!rawSvg) return html``;
+    const parsed = parseSvgToDataUrl(rawSvg);
+    if (!parsed.ok) {
+      return html`<div style="color: #ff5252; padding: 2rem; text-align: center;">
+        Malformed SVG Output
+      </div>`;
     }
-    const svgEl = doc.querySelector('svg')
-    if (svgEl) {
-      if (!svgEl.hasAttribute('viewBox') && svgEl.hasAttribute('width') && svgEl.hasAttribute('height')) {
-        const w = svgEl.getAttribute('width')?.replace(/[^0-9.]/g, '')
-        const h = svgEl.getAttribute('height')?.replace(/[^0-9.]/g, '')
-        if (w && h) {
-          svgEl.setAttribute('viewBox', `0 0 ${w} ${h}`)
-        }
-      }
-      svgEl.removeAttribute('width')
-      svgEl.removeAttribute('height')
-      
-      const svgString = new XMLSerializer().serializeToString(svgEl)
-      const dataUrl = `data:image/svg+xml;utf8,${encodeURIComponent(svgString)}`
-      
-      return html`<img src="${dataUrl}" style="width: 100%; height: 100%; object-fit: contain; max-width: 100%; max-height: 100%; display: block; margin: auto;" alt="Animated SVG Result" />`
-    }
-    return html``
+
+    return html`<img
+      src="${parsed.dataUrl}"
+      style="width: 100%; height: 100%; object-fit: contain; max-width: 100%; max-height: 100%; display: block; margin: auto;"
+      alt="Animated SVG Result"
+    />`;
   }
 
   private handlePromptInput(e: Event) {
-    this.actionPrompt = (e.target as HTMLInputElement).value
+    this.actionPrompt = (e.target as HTMLInputElement).value;
   }
 
   private async handleGenerate() {
-    if (!this.originalSvg || !this.actionPrompt.trim()) return
+    if (!this.originalSvg || !this.actionPrompt.trim()) return;
 
-    this.isLoading = true
-    this.error = null
-    this.loadingPhraseIndex = 0
+    this.isLoading = true;
+    this.error = null;
+    this.loadingPhraseIndex = 0;
     this.loadingTimer = window.setInterval(() => {
-      this.loadingPhraseIndex = (this.loadingPhraseIndex + 1) % this.loadingPhrases.length
-    }, 2500)
+      this.loadingPhraseIndex = (this.loadingPhraseIndex + 1) % this.loadingPhrases.length;
+    }, 2500);
 
     try {
       const response = await fetch('/api/transform', {
@@ -498,158 +539,205 @@ export class SvgAnimatorApp extends LitElement {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           svg: this.originalSvg,
-          action: this.actionPrompt.trim()
-        })
-      })
+          action: this.actionPrompt.trim(),
+        }),
+      });
 
-      const data = await response.json()
+      const data = (await response.json()) as TransformApiResponse;
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to transform SVG')
+      if (!response.ok || !data.result) {
+        throw new Error(data.error || 'Failed to transform SVG');
       }
 
-      this.transformedSvg = data.result
+      this.transformedSvg = data.result;
+      if (data.model) {
+        this.activeModel = data.model;
+      }
 
-      // Save to IndexedDB history
       const historyItem: HistoryItem = {
         id: crypto.randomUUID(),
         originalSvg: this.originalSvg,
         action: this.actionPrompt.trim(),
-        resultSvg: this.transformedSvg!,
-        timestamp: Date.now()
-      }
-      
-      await historyService.addHistoryItem(historyItem)
-      await this.loadHistory()
+        resultSvg: this.transformedSvg,
+        timestamp: Date.now(),
+      };
 
-    } catch (err: any) {
-      console.error(err)
-      this.error = err.message || 'An error occurred'
+      await historyService.addHistoryItem(historyItem);
+      await this.loadHistory();
+    } catch (err: unknown) {
+      console.error(err);
+      const message = err instanceof Error ? err.message : 'An unexpected error occurred';
+      this.showErrorToast(message);
     } finally {
-      this.isLoading = false
+      this.isLoading = false;
       if (this.loadingTimer) {
-        window.clearInterval(this.loadingTimer)
-        this.loadingTimer = null
+        window.clearInterval(this.loadingTimer);
+        this.loadingTimer = null;
       }
     }
   }
 
   render() {
     return html`
-      <app-bar></app-bar>
+      <app-bar
+        .modelName=${this.activeModel}
+        @open-about=${() => (this.showAbout = true)}
+      ></app-bar>
+
+      <about-dialog
+        ?open=${this.showAbout}
+        .modelName=${this.activeModel}
+        @close=${() => (this.showAbout = false)}
+      ></about-dialog>
+
+      <error-toast .message=${this.error} @dismiss-error=${() => (this.error = null)}></error-toast>
+
       <main>
-        
         <div class="prompt-section">
           <div class="action-bar">
-            <input 
-              class="prompt-input" 
-              type="text" 
-              placeholder="e.g. Make it breathe and glow softly..." 
+            <input
+              class="prompt-input"
+              type="text"
+              placeholder="e.g. Make it breathe and glow softly..."
               .value=${this.actionPrompt}
               @input=${this.handlePromptInput}
               @keydown=${(e: KeyboardEvent) => e.key === 'Enter' && this.handleGenerate()}
               ?disabled=${this.isLoading}
             />
-            <button 
-              class="generate-btn" 
+            <button
+              class="generate-btn"
               ?disabled=${!this.originalSvg || !this.actionPrompt.trim() || this.isLoading}
               @click=${this.handleGenerate}
             >
               Generate
             </button>
           </div>
-          
+
           <div class="presets-container">
-            ${this.presets.map(preset => html`
-              <div class="chip" @click=${() => this.actionPrompt = preset}>${preset}</div>
-            `)}
+            ${this.presets.map(
+              (preset) => html`
+                <div class="chip" @click=${() => (this.actionPrompt = preset)}>${preset}</div>
+              `,
+            )}
           </div>
         </div>
 
-        ${this.error ? html`<div class="error-msg">${this.error}</div>` : ''}
-        ${this.isComplex ? html`<div class="warning-msg">⚠️ <strong>Complex Vector Detected:</strong> This file is very large. To avoid hitting animation limits, the AI may take "artistic license" and redraw a simpler version of it.</div>` : ''}
+        ${this.isComplex
+          ? html`<div class="warning-msg">
+              ⚠️ <strong>Complex Vector Detected:</strong> This file is very large. To avoid hitting
+              animation limits, the AI may take "artistic license" and redraw a simpler version of
+              it.
+            </div>`
+          : ''}
 
         <div class="editor-section">
           <!-- Left Panel: Input -->
           <div class="panel">
             <div class="panel-header">Source Generator</div>
-            ${!this.originalSvg 
-              ? html`<multi-source-uploader @svg-loaded=${this.handleSvgLoaded}></multi-source-uploader>`
+            ${!this.originalSvg
+              ? html`<multi-source-uploader
+                  @svg-loaded=${this.handleSvgLoaded}
+                  @upload-error=${this.handleUploadError}
+                ></multi-source-uploader>`
               : html`
                   <svg-viewer .svgContent=${this.originalSvg}></svg-viewer>
-                  <button @click=${() => { this.originalSvg = null; this.transformedSvg = null; }} style="margin-top:1rem; padding:0.5rem; background:transparent; border:1px solid #444; color:#aaa; border-radius:6px; cursor:pointer;">
+                  <button
+                    @click=${() => {
+                      this.originalSvg = null;
+                      this.transformedSvg = null;
+                      this.isComplex = false;
+                    }}
+                    style="margin-top:1rem; padding:0.5rem; background:transparent; border:1px solid #444; color:#aaa; border-radius:6px; cursor:pointer;"
+                  >
                     Upload new SVG
                   </button>
-                `
-            }
+                `}
           </div>
 
           <!-- Right Panel: Output -->
           <div class="panel" style="position: relative;">
             <div class="panel-header">Result SVG</div>
-            ${this.isLoading ? html`
-              <div class="loading-overlay">
-                <div class="spinner"></div>
-                <div class="loading-text">${this.loadingPhrases[this.loadingPhraseIndex]}</div>
-              </div>
-            ` : ''}
-            
-            ${this.transformedSvg 
-              ? html`<svg-viewer .svgContent=${this.transformedSvg}></svg-viewer>`
-              : html`
-                  <div style="flex:1; display:flex; justify-content:center; align-items:center; color:#555; border: 2px dashed rgba(255,255,255,0.05); border-radius: 8px; min-height: 400px;">
-                    Result will appear here
+            ${this.isLoading
+              ? html`
+                  <div class="loading-overlay">
+                    <div class="spinner"></div>
+                    <div class="loading-text">${this.loadingPhrases[this.loadingPhraseIndex]}</div>
                   </div>
                 `
-            }
+              : ''}
+            ${this.transformedSvg
+              ? html`<svg-viewer .svgContent=${this.transformedSvg}></svg-viewer>`
+              : html`
+                  <div
+                    style="flex:1; display:flex; justify-content:center; align-items:center; color:#555; border: 2px dashed rgba(255,255,255,0.05); border-radius: 8px; min-height: 400px;"
+                  >
+                    Result will appear here
+                  </div>
+                `}
           </div>
         </div>
 
         <div class="history-section">
-          <div class="panel-header" style="font-size: 1.1rem; color: #888; margin-bottom: 0;">History</div>
-          <history-carousel 
+          <div class="panel-header" style="font-size: 1.1rem; color: #888; margin-bottom: 0;">
+            History
+          </div>
+          <history-carousel
             .items=${this.history}
             @history-selected=${this.handleHistorySelected}
           ></history-carousel>
         </div>
-
       </main>
 
       <!-- History Item Lightbox Modal -->
-      <div class="modal-overlay ${this.selectedHistoryItem ? 'open' : ''}" @click=${(e: Event) => e.target === e.currentTarget && this.closeModal()}>
+      <div
+        class="modal-overlay ${this.selectedHistoryItem ? 'open' : ''}"
+        @click=${(e: Event) => e.target === e.currentTarget && this.closeModal()}
+      >
         <div class="modal-content">
-          ${this.selectedHistoryItem ? html`
-            <div class="modal-header">
-              <div class="modal-title-group">
-                <div class="modal-prompt">"${this.selectedHistoryItem.action}"</div>
-                <div class="modal-time">${new Date(this.selectedHistoryItem.timestamp).toLocaleString()}</div>
-              </div>
-              <button class="close-btn" @click=${this.closeModal}>&times;</button>
-            </div>
-            
-            <div class="modal-body">
-              <div class="modal-svg-container">
-                ${this.renderSvg(this.selectedHistoryItem.resultSvg)}
-              </div>
-            </div>
+          ${this.selectedHistoryItem
+            ? html`
+                <div class="modal-header">
+                  <div class="modal-title-group">
+                    <div class="modal-prompt">"${this.selectedHistoryItem.action}"</div>
+                    <div class="modal-time">
+                      ${new Date(this.selectedHistoryItem.timestamp).toLocaleString()}
+                    </div>
+                  </div>
+                  <button class="close-btn" @click=${this.closeModal}>&times;</button>
+                </div>
 
-            <div class="modal-actions">
-              <button class="btn-danger" @click=${this.deleteHistoryItem}>Delete</button>
-              
-              <div class="btn-group">
-                <button class="btn-outline" @click=${this.downloadModalSvg}>Download SVG</button>
-                <button class="generate-btn" @click=${this.loadHistoryAsSource} style="padding: 0.8rem 1.5rem;">Use as Source</button>
-              </div>
-            </div>
-          ` : ''}
+                <div class="modal-body">
+                  <div class="modal-svg-container">
+                    ${this.renderSvg(this.selectedHistoryItem.resultSvg)}
+                  </div>
+                </div>
+
+                <div class="modal-actions">
+                  <button class="btn-danger" @click=${this.deleteHistoryItem}>Delete</button>
+
+                  <div class="btn-group">
+                    <button class="btn-outline" @click=${this.downloadModalSvg}>
+                      Download SVG
+                    </button>
+                    <button
+                      class="generate-btn"
+                      @click=${this.loadHistoryAsSource}
+                      style="padding: 0.8rem 1.5rem;"
+                    >
+                      Use as Source
+                    </button>
+                  </div>
+                </div>
+              `
+            : ''}
         </div>
       </div>
-    `
+    `;
   }
 }
 
 declare global {
   interface HTMLElementTagNameMap {
-    'svg-animator-app': SvgAnimatorApp
+    'svg-animator-app': SvgAnimatorApp;
   }
 }

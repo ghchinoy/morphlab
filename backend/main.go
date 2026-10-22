@@ -15,176 +15,267 @@
 package main
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
+	"google.golang.org/genai"
 )
 
+const (
+	defaultModelName  = "gemini-4-argon"
+	maxRequestBytes   = 5 << 20 // 5 MB
+	generationTimeout = 3 * time.Minute
+)
+
+// TransformRequest represents the payload sent by the frontend to animate an SVG.
 type TransformRequest struct {
 	SVG    string `json:"svg"`
 	Action string `json:"action"`
+	Model  string `json:"model,omitempty"`
 }
 
+// TransformResponse represents the response returned by /api/transform.
 type TransformResponse struct {
-	Result string `json:"result"`
+	Result string `json:"result,omitempty"`
+	Model  string `json:"model,omitempty"`
 	Error  string `json:"error,omitempty"`
 }
 
+// HealthResponse represents the status returned by /api/health.
+type HealthResponse struct {
+	Status  string `json:"status"`
+	Model   string `json:"model"`
+	Backend string `json:"backend"`
+}
+
+// svgGenerator abstracts the AI generation call for testability.
+var svgGenerator = callGemini
+
 func main() {
-	_ = godotenv.Load("../.env")
+	if err := godotenv.Load(".env"); err != nil {
+		_ = godotenv.Load("../.env")
+	}
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
-	fs := http.FileServer(http.Dir("../frontend/dist"))
-	http.Handle("/", fs)
-	http.HandleFunc("/api/transform", handleTransform)
+	staticDir := "../frontend/dist"
+	if info, err := os.Stat("./frontend/dist"); err == nil && info.IsDir() {
+		staticDir = "./frontend/dist"
+	}
 
-	log.Printf("Server starting on http://localhost:%s", port)
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
+	mux := newServerMux(staticDir)
+
+	srv := &http.Server{
+		Addr:              ":" + port,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		WriteTimeout:      generationTimeout + 15*time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+
+	log.Printf("MorphLab server starting on http://localhost:%s (model: %s)", port, resolveModelName(""))
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
 }
 
-func handleTransform(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+func newServerMux(staticDir string) *http.ServeMux {
+	mux := http.NewServeMux()
+	fs := http.FileServer(http.Dir(staticDir))
+	mux.Handle("/", fs)
+	mux.HandleFunc("/api/health", handleHealth)
+	mux.HandleFunc("/api/transform", handleTransform)
+	return mux
+}
+
+func resolveModelName(requested string) string {
+	if strings.TrimSpace(requested) != "" {
+		return strings.TrimSpace(requested)
+	}
+	if envModel := strings.TrimSpace(os.Getenv("GEMINI_MODEL")); envModel != "" {
+		return envModel
+	}
+	return defaultModelName
+}
+
+func resolveBackendMode() string {
+	if strings.TrimSpace(os.Getenv("GEMINI_API_KEY")) != "" {
+		return "gemini-api"
+	}
+	if strings.TrimSpace(os.Getenv("GOOGLE_CLOUD_PROJECT")) != "" {
+		return "vertex-ai"
+	}
+	return "unconfigured"
+}
+
+func handleHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		sendJSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(HealthResponse{
+		Status:  "ok",
+		Model:   resolveModelName(""),
+		Backend: resolveBackendMode(),
+	})
+}
+
+func handleTransform(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		sendJSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBytes)
 
 	var req TransformRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("Error: Invalid request body: %v", err)
-		sendError(w, "Invalid request body")
+		sendJSONError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-	
+
+	req.SVG = strings.TrimSpace(req.SVG)
+	req.Action = strings.TrimSpace(req.Action)
+
+	if req.SVG == "" || req.Action == "" {
+		sendJSONError(w, "Both 'svg' and 'action' fields are required", http.StatusBadRequest)
+		return
+	}
+
 	log.Printf("Received transform request. Action: %q. Incoming SVG Size: %d bytes", req.Action, len(req.SVG))
 
-	apiKey := os.Getenv("GEMINI_API_KEY")
-	if apiKey == "" {
-		log.Println("Error: GEMINI_API_KEY not set")
-		sendError(w, "GEMINI_API_KEY not set")
-		return
-	}
+	modelName := resolveModelName(req.Model)
+	prompt := buildAnimationPrompt(req.SVG, req.Action)
 
-	modelName := os.Getenv("GEMINI_MODEL")
-	if modelName == "" {
-		modelName = "gemini-3-flash-preview"
-	}
-
-	prompt := fmt.Sprintf(`You are an expert SVG animator and designer.
-I will give you an SVG file. I want you to transform it by applying the following action/animation: "%s".
-
-CRITICAL INSTRUCTIONS:
-1. Return ONLY the raw transformed SVG code. No markdown formatting like \`+"`"+`xml or \`+"`"+`svg.
-2. Ensure the animation is done using standard SVG <animate>, <animateTransform>, or CSS embedded inside the SVG. 
-3. Keep the original viewbox and scaling intact but make it visually execute the requested action.
-4. MAXIMUM LENGTH: You are constrained by a strict token limit. If the Original SVG is extremely complex or contains dense coordinate paths, DO NOT attempt to reconstruct it verbatim if it will cause you to truncate the file. You MUST aggressively simplify the geometry, merge paths, or lower coordinate precision so that the entire animated file can be written in a single response ending with </svg>. A truncated file is considered a complete failure.
-
-Original SVG:
-%s
-`, req.Action, req.SVG)
+	ctx, cancel := context.WithTimeout(r.Context(), generationTimeout)
+	defer cancel()
 
 	log.Printf("Sending payload to Gemini (%s)...", modelName)
-	resultSVG, err := callGemini(modelName, apiKey, prompt)
+	rawOutput, err := svgGenerator(ctx, modelName, prompt)
 	if err != nil {
 		log.Printf("Gemini Error: %v", err)
-		sendError(w, "Failed to transform SVG: Model error or timeout")
+		sendJSONError(w, fmt.Sprintf("Failed to transform SVG: %v", err), http.StatusBadGateway)
 		return
 	}
-	
-	log.Printf("Successfully received response from Gemini. Resulting SVG Size: %d bytes", len(resultSVG))
 
-	resultSVG = strings.TrimPrefix(strings.TrimSpace(resultSVG), "```xml")
-	resultSVG = strings.TrimPrefix(resultSVG, "```svg")
-	resultSVG = strings.TrimPrefix(resultSVG, "```")
-	resultSVG = strings.TrimSuffix(strings.TrimSpace(resultSVG), "```")
-	resultSVG = strings.TrimSpace(resultSVG)
+	resultSVG := cleanSVGOutput(rawOutput)
+	if !isValidSVGEnvelope(resultSVG) {
+		log.Printf("Error: Gemini returned invalid or truncated SVG (%d bytes)", len(resultSVG))
+		sendJSONError(w, "Model returned incomplete or invalid SVG markup. Please try again.", http.StatusUnprocessableEntity)
+		return
+	}
+
+	log.Printf("Successfully received response from Gemini (%s). Resulting SVG Size: %d bytes", modelName, len(resultSVG))
 
 	w.Header().Set("Content-Type", "application/json")
-	if encodeErr := json.NewEncoder(w).Encode(TransformResponse{Result: resultSVG}); encodeErr != nil {
+	if encodeErr := json.NewEncoder(w).Encode(TransformResponse{
+		Result: resultSVG,
+		Model:  modelName,
+	}); encodeErr != nil {
 		log.Printf("Error encoding response: %v", encodeErr)
 	}
 }
 
-func sendError(w http.ResponseWriter, msg string) {
+func buildAnimationPrompt(svgContent, action string) string {
+	return fmt.Sprintf(`You are an expert SVG animator and designer.
+I will give you an SVG file. I want you to transform it by applying the following action/animation: "%s".
+
+CRITICAL INSTRUCTIONS:
+1. Return ONLY the raw transformed SVG code. No markdown formatting like `+"```xml"+` or `+"```svg"+`.
+2. Ensure the animation is done using standard SVG <animate>, <animateTransform>, or CSS embedded inside the SVG.
+3. Keep the original viewBox and scaling intact but make it visually execute the requested action.
+4. MAXIMUM LENGTH: You are constrained by a strict token limit. If the Original SVG is extremely complex or contains dense coordinate paths, DO NOT attempt to reconstruct it verbatim if it will cause you to truncate the file. You MUST aggressively simplify the geometry, merge paths, or lower coordinate precision so that the entire animated file can be written in a single response ending with </svg>. A truncated file is considered a complete failure.
+
+Original SVG:
+%s
+`, action, svgContent)
+}
+
+func sendJSONError(w http.ResponseWriter, msg string, status int) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusInternalServerError)
+	w.WriteHeader(status)
 	if encodeErr := json.NewEncoder(w).Encode(TransformResponse{Error: msg}); encodeErr != nil {
 		log.Printf("Error encoding error response: %v", encodeErr)
 	}
 }
 
-func callGemini(model, apiKey, prompt string) (string, error) {
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", model, apiKey)
-
-	payload := map[string]interface{}{
-		"contents": []map[string]interface{}{
-			{
-				"parts": []map[string]interface{}{
-					{"text": prompt},
-				},
-			},
-		},
-		"generationConfig": map[string]interface{}{
-			"temperature": 0.2,
-		},
+func newGenAIClient(ctx context.Context) (*genai.Client, error) {
+	apiKey := strings.TrimSpace(os.Getenv("GEMINI_API_KEY"))
+	if apiKey != "" {
+		return genai.NewClient(ctx, &genai.ClientConfig{
+			APIKey:  apiKey,
+			Backend: genai.BackendGeminiAPI,
+		})
 	}
 
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return "", err
-	}
-
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer func() {
-		if closeErr := res.Body.Close(); closeErr != nil {
-			log.Printf("Error closing response body: %v", closeErr)
+	project := strings.TrimSpace(os.Getenv("GOOGLE_CLOUD_PROJECT"))
+	if project != "" {
+		location := strings.TrimSpace(os.Getenv("GOOGLE_CLOUD_LOCATION"))
+		if location == "" {
+			location = "global"
 		}
-	}()
-
-	var geminiResp struct {
-		Candidates []struct {
-			Content struct {
-				Parts []struct {
-					Text string `json:"text"`
-				} `json:"parts"`
-			} `json:"content"`
-		} `json:"candidates"`
+		return genai.NewClient(ctx, &genai.ClientConfig{
+			Project:  project,
+			Location: location,
+			Backend:  genai.BackendVertexAI,
+		})
 	}
 
-	respBody, _ := io.ReadAll(res.Body)
+	return nil, errors.New("neither GEMINI_API_KEY nor GOOGLE_CLOUD_PROJECT is configured")
+}
 
-	if res.StatusCode != 200 {
-		return "", fmt.Errorf("API Error: %s", string(respBody))
-	}
-
-	if err := json.Unmarshal(respBody, &geminiResp); err != nil {
+func callGemini(ctx context.Context, model, prompt string) (string, error) {
+	client, err := newGenAIClient(ctx)
+	if err != nil {
 		return "", err
 	}
 
-	if len(geminiResp.Candidates) > 0 && len(geminiResp.Candidates[0].Content.Parts) > 0 {
-		return geminiResp.Candidates[0].Content.Parts[0].Text, nil
+	temp := float32(0.2)
+	resp, err := client.Models.GenerateContent(ctx, model, genai.Text(prompt), &genai.GenerateContentConfig{
+		Temperature: &temp,
+	})
+	if err != nil {
+		return "", err
 	}
 
-	return "", fmt.Errorf("empty response from Gemini")
+	text := strings.TrimSpace(resp.Text())
+	if text == "" {
+		return "", errors.New("empty response from Gemini")
+	}
+	return text, nil
+}
+
+func cleanSVGOutput(raw string) string {
+	result := strings.TrimSpace(raw)
+	result = strings.TrimPrefix(result, "```xml")
+	result = strings.TrimPrefix(result, "```svg")
+	result = strings.TrimPrefix(result, "```")
+	result = strings.TrimSuffix(strings.TrimSpace(result), "```")
+	result = strings.TrimSpace(result)
+
+	startIdx := strings.Index(strings.ToLower(result), "<svg")
+	endIdx := strings.LastIndex(strings.ToLower(result), "</svg>")
+	if startIdx != -1 && endIdx != -1 && endIdx > startIdx {
+		return strings.TrimSpace(result[startIdx : endIdx+len("</svg>")])
+	}
+	return result
+}
+
+func isValidSVGEnvelope(svg string) bool {
+	lower := strings.ToLower(strings.TrimSpace(svg))
+	return strings.HasPrefix(lower, "<svg") && strings.HasSuffix(lower, "</svg>")
 }
